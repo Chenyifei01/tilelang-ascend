@@ -175,7 +175,7 @@ examples/{op}/perf_tuning/
 
 ```markdown
 ## Stage Result
-- stage: 4
+- stage: 3
 - operator: {op}
 - iteration: <数字>
 - bottleneck_type: compute / transfer / sync / other

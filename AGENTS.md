@@ -126,3 +126,97 @@
 
 - 架构详情：[architecture.md](.agents/skills/tilelang-custom-skill/architecture.md)
 - TileLang 编程指南：[TileLang-Ascend Programming Guide](docs/TileLang-Ascend%20Programming%20Guide.md)
+
+---
+
+## lightning_indexer 算子性能基准
+
+> 采集时间: 2026-07-21 | 设备: Ascend910B3 | CANN 9.0
+
+### 采集方式
+
+使用 `msprof op` 工具采集 kernel 级性能数据（不含 host 侧开销）：
+
+```bash
+# AscendC 官方算子
+msprof op --kernel-name="Lightning" --output=./perf_msprof_ascendc_full/<case> \
+  --application="python3 perf_benchmark_ascendc.py --case=<case> --iters=30"
+
+# TileLang 实现
+msprof op --kernel-name="main" --output=./perf_msprof_tilelang_full/<case> \
+  --application="python3 perf_benchmark_tilelang.py --case=<case> --iters=30"
+```
+
+性能脚本：`examples/lightning_indexer/perf_benchmark_ascendc.py` / `perf_benchmark_tilelang.py`
+
+### 测试用例
+
+| 用例 | B | S1 | S2 | N1 | D | block_size | dtype | mode | sparse_count |
+|------|---|----|----|----|---|-----------|-------|------|-------------|
+| BSND_BSND | 16 | 5 | 3072 | 64 | 128 | 128 | FP16 | 3 | 2048 |
+| BSND_PA_BSND | 2 | 1 | 2048 | 8 | 128 | 128 | FP16 | 3 | 2048 |
+| TND_TND | 8 | 5 | 3072 | 24 | 128 | 256 | FP16 | 0 | 2048 |
+| TND_PA_BSND | 20 | 3 | 512 | 64 | 128 | 16 | BF16 | 0 | 315 |
+
+### Task Duration 对比
+
+| 用例 | AscendC (us) | TileLang (us) | 比值 | 80% 目标 (us) | 达标 |
+|------|-------------|--------------|------|-------------|------|
+| BSND_PA_BSND | 20.20 | **18.78** | 0.93x | ≤25.25 | ✅ |
+| BSND_BSND | 74.26 | 111.64 | 1.50x | ≤92.83 | ❌ |
+| TND_TND | 40.54 | 55.10 | 1.36x | ≤50.67 | ❌ |
+| TND_PA_BSND | 30.44 | 超时 | — | ≤38.05 | ⏳ |
+
+### ArithmeticUtilization 详细数据
+
+| 用例 | 实现 | Cube (us) | Vec0 (us) | Vec1 (us) | Cube% | Vec0% | Vec1% |
+|------|------|----------|----------|----------|-------|-------|-------|
+| BSND_BSND | AscendC | 60.14 | 69.26 | 67.98 | 20.5% | 63.1% | 43.5% |
+| | TileLang | 98.83 | 102.49 | 102.50 | 21.1% | 48.4% | 33.1% |
+| BSND_PA_BSND | AscendC | 9.16 | 14.61 | 14.38 | 0.5% | 13.2% | 11.0% |
+| | TileLang | 10.80 | 12.19 | 12.23 | 6.7% | 17.4% | 7.2% |
+| TND_TND | AscendC | 26.56 | 33.74 | 33.06 | 7.1% | 43.7% | 31.0% |
+| | TileLang | 42.80 | 47.04 | 47.04 | 10.4% | 36.0% | 26.0% |
+
+### 核数对比
+
+| 用例 | AscendC Block Dim | AscendC Mix Block Dim | TileLang Block Dim | TileLang Mix Block Dim |
+|------|-------------------|----------------------|-------------------|----------------------|
+| BSND_BSND | 20 | 40 | 20 | 40 |
+| BSND_PA_BSND | 20 | 40 | 8 | 16 |
+| TND_TND | 20 | 40 | 20 | 40 |
+
+### 瓶颈分析
+
+**BSND_BSND**（主要瓶颈，差 37.38 us）：
+- Cube 时间: 60.14 → 98.83 us（慢 64%）— **主要差距来源**
+- Vector0 利用率: 63.1% → 48.4%（低 14.7%）— sort 缓存优化缺失
+- Cube 利用率相近（20.5% vs 21.1%），但 GEMM tiling/流水线效率差异导致时间差距大
+
+**TND_TND**（差 14.56 us）：
+- Cube: 26.56 → 42.80 us（慢 61%）
+- Vector0: 33.74 → 47.04 us（慢 39%）
+
+**BSND_PA_BSND**（已达标，快 1.42 us）：
+- TileLang 用 8 核 vs AscendC 20 核，task 分配更合理
+
+### 性能优化方向
+
+| 优先级 | 优化项 | 预期收益 | 影响用例 |
+|--------|--------|---------|---------|
+| P0 | Cube GEMM tiling 优化 — 对齐 AscendC M=256/S2=256 分块 | Cube 时间 ~40% | BSND_BSND, TND_TND |
+| P1 | sort 缓存优化 — S1≤4 时缓存 4 块再 merge | merge_sort 次数 75% | BSND_BSND |
+| P2 | 同步开销优化 — 减少 barrier_all / set_flag | Vector 空闲时间 | 全部 |
+| P3 | TND_PA_BSND 排查 — block_size=16 超时 | 功能补齐 | TND_PA_BSND |
+
+### 性能数据文件
+
+- AscendC msprof 原始数据: `examples/lightning_indexer/perf_msprof_ascendc_full/<case>/`
+- TileLang msprof 原始数据: `examples/lightning_indexer/perf_msprof_tilelang_full/<case>/`
+- 性能基准脚本: `examples/lightning_indexer/perf_benchmark_ascendc.py` / `perf_benchmark_tilelang.py`
+- 实现对比分析: `examples/lightning_indexer/COMPARISON.md`
+
+### 测试无输出
+- 使用npu-smi info来查看机器使用状况
+- torch_npu.npu.set_device(_DEV)使用空闲卡
+- 可以使用print(func.get_kernel_source())来检查生成的c++代码

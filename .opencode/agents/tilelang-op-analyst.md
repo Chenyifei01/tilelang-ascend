@@ -5,6 +5,11 @@ mode: subagent
 skills:
   - tilelang-op-design
   - tilelang-op-test-design
+tools:
+  read: true
+  write: true
+  edit: true
+  bash: true
 ---
 
 # TileLang-Ascend 算子设计 Agent -- Stage 1 执行器
@@ -160,6 +165,19 @@ Orchestrator 在调度本 Agent 时会传入 `mode` 参数，决定本次行为�
 
 ---
 
+## stdout 输出限制（硬约束）
+
+> 防止单次响应超出 token 上限导致截断。这是 Stage 1 不再"老是输出截断"的关键纪律。
+
+- 所有产物（`DESIGN.md` / `proto.yaml` / L0 计划）**必须用 Write 工具直接写到磁盘**，不得在 stdout 中输出文件内容。
+- revision 模式读取历史备份、门禁校验读取已生成文件，**必须用 Read 工具**，不得让 skill 在 stdout 转述文件内容。
+- L0 测试计划追加到 `DESIGN.md` 验证方案章节时，**必须用 Edit 工具**定位章节锚点后插入，**不得**把整个 DESIGN.md 重写一遍。
+- stdout **只输出**本节定义的结构化摘要（≤ 50 行）。
+- **禁止**在 stdout 中输出：DESIGN.md / proto.yaml 全文或部分章节、`previous_revisions` 文件内容、§9.3 精度表、design-template 模板片段等大块文本。
+- 14 项门禁校验**用 Read 工具读已生成文件后逐项核对**，结果以聚合形式（`<pass_count>/<total_count>`）回报，仅失败项展开明细。
+
+---
+
 ## 输出格式要求
 
 使用如下结构返回阶段结果：
@@ -170,28 +188,16 @@ Orchestrator 在调度本 Agent 时会传入 `mode` 参数，决定本次行为�
 - mode: first_design / revision
 - operator: {op}
 - output: examples/{op}/DESIGN.md
-- revision_index: <数字，仅 revision 模式>
+- proto_yaml: examples/{op}/proto.yaml
+- revision_index: <数字，仅 revision 模式；非 revision 写 n/a>
 - validation: pass / fail
-- validation_details:
-  - 概述: pass / fail
-  - 编程模式: pass / fail
-  - API 映射: pass / fail
-  - 内存规划: pass / fail
-  - Tiling: pass / fail
-  - Loop 结构: pass / fail
-  - 同步: pass / fail
-  - 验证方案: pass / fail
-  - 风险点: pass / fail
-  - 同类实现: pass / fail
-  - 无占位符: pass / fail
-  - L0 测试计划: pass / fail
-  - 回退说明: pass / fail / n/a
+- validation_summary: <pass_count>/<total_count>（仅 fail 时展开失败项明细，如 `13/14 pass，失败: L0 测试计划`；全 pass 时只写 `14/14 pass`）
 - programming_mode: developer / expert / hybrid
-- key_api_choices: <主要 API 选型>
-- referenced_examples: <列出引用的 examples/ 路径>
-- l0_test_plan: <L0 规则 shape / dtype / 精度标准概要；由 tilelang-op-test-design 场景 A 生成>
-- key_adjustments: <仅 revision 模式：相对上一版的关键调整>
-- skills_consulted: <本次实际查阅 / 引用过的 skill 路径列表，相对 .agents/skills/；如 tilelang-op-design / tilelang-op-test-design / tilelang-custom-skill/tilelang-api-best-practices>
+- key_api_choices: <主要 API 选型，单行>
+- referenced_examples: <引用的 examples/ 路径，逗号分隔>
+- l0_test_plan_summary: <L0 用例数 + dtype 数 + 一行精度标准概要；详细计划已写入 DESIGN.md 验证方案章节>
+- key_adjustments: <仅 revision 模式：相对上一版的关键调整，2-3 行；非 revision 写 n/a>
+- skills_consulted: <skill 路径列表，逗号分隔；相对 .agents/skills/>
 - summary: <一句话说明>
 - issues: <若无则写 none>
 ```

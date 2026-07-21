@@ -1,0 +1,120 @@
+# proto.yaml: lightning_indexer 算子接口规格
+# 供覆盖门禁 coverage_check.py --proto 派生 D-DTYPE-*/D-PARAM-* 维度
+# dtype 全集取自 DESIGN.md §9.3 精度表; attr 取自 §4/§1
+# v5: TND 已从二期提升到一期 (kernel 直接消费 TND strided DMA)
+# v5: 新增 sparse_values 精度标准 (FP16/BF16, 缺陷 #7 修正)
+# v6: API 优化 (row_expand_mul + reduce_sum merge + 动态核数 + pipe_barrier) — 接口不变, dtype/attr 同 v5
+# v7: 性能优化 (Cube 3 层 tiling + sort 缓存 + TND_PA_BSND 修复) — 接口不变, dtype/attr 同 v6
+# v7.1: API 验证后修正 (独立 L1 buffer + 1D 平铺 sort cache + 位置参数 merge_sort) — 接口不变, dtype/attr 同 v7
+# v7.2: 缺口验证后修正 (L0C→GM→UB 路径 + 方案 C VID_S1=1 + SparseTopK 截断 + sort 稳定性澄清) — 接口不变, dtype/attr 同 v7.1
+# v7.4: Phase 1-3 验证后修正 (sort 前 -inf 填充 + 边界 Case tiling + 单 Kernel 架构确认) — 接口不变, dtype/attr 同 v7.2
+
+operator:
+  name: lightning_indexer
+  category: Fusion   # CV 融合算子: GEMM + weight mul + reduce + mask + topk
+  formula: |
+    Indices = Top-k{ [1]_{1xg} @ [ (W @ [1]_{1xSk}) ⊙ ReLU(Q_index @ K_index^T) ] }
+    其中 Q_index ∈ R^{g x d}, K_index ∈ R^{Sk x d}, W ∈ R^{g x 1}
+    g = GQA group size = N1/N2, d = head_dim = 128
+
+  attrs:
+    - name: layout_query
+      type: Enum
+      default: "BSND"
+      required: false
+      # v4: 一期支持 BSND + TND (kernel 直接消费 TND strided DMA)
+
+    - name: layout_key
+      type: Enum
+      default: "BSND"
+      required: false
+      # v4: 一期支持 PA_BSND, BSND, TND (kernel 直接消费 TND strided DMA)
+
+    - name: sparse_count
+      type: Int
+      default: 2048
+      required: false
+      # 范围 [1, 2048], top-k 的 k 值
+
+    - name: sparse_mode
+      type: Enum
+      default: 3
+      required: false
+      # 0 = defaultMask (无 mask); 3 = rightDownCausal
+
+    - name: pre_tokens
+      type: Int
+      default: 9223372036854775807  # 2^63-1
+      required: false
+      # 固定为 2^63-1, 不支持其他值
+
+    - name: next_tokens
+      type: Int
+      default: 9223372036854775807  # 2^63-1
+      required: false
+      # 固定为 2^63-1, 不支持其他值
+
+    - name: return_value
+      type: Bool
+      default: false
+      required: false
+      # True 时输出 sparse_values; 仅 layout_key != PA_BSND 时支持
+
+  inputs:
+    - name: query
+      dtype: [bfloat16, float16]
+      # shape: [B, S1, N1, D] (BSND) / [T1, N1, D] (TND)
+      # N1 ∈ {8, 16, 24, 32, 64}, D=128, 不支持非连续
+      # v4: TND 由 kernel 直接消费 (strided DMA), 无需 host 转置
+
+    - name: key
+      dtype: [bfloat16, float16]
+      # shape: [block_count, block_size, N2, D] (PA_BSND) / [B, S2, N2, D] (BSND) / [T2, N2, D] (TND)
+      # N2=1, block_size ∈ [16, 1024] 且 16 整数倍
+      # v4: TND 由 kernel 直接消费 (strided DMA), 无需 host 转置
+
+    - name: weights
+      dtype: [bfloat16, float16]
+      # shape: [B, S1, N1] (BSND) / [T, N1] (TND)
+      # 绝对禁止 float32
+
+    - name: actual_seq_lengths_query
+      dtype: [int32]
+      # shape: [B], 可选 (BSND 时可为 None=S1; TND 时必传, 前缀和)
+      # v4: kernel 直接读取前缀和标量, 无需 host 转换
+
+    - name: actual_seq_lengths_key
+      dtype: [int32]
+      # shape: [B], 可选 (BSND 时可为 None=S2; PA_BSND 非前缀和; TND 前缀和)
+      # v4: kernel 直接读取前缀和标量, 无需 host 转换
+
+    - name: block_table
+      dtype: [int32]
+      # shape: [B, maxBlockNumPerSeq], 仅 PA 场景必传
+
+  outputs:
+    - name: sparse_indices
+      dtype: [int32]
+      # shape: [B, S1, N2, sparse_count] (BSND) / [T1, N2, sparse_count] (TND)
+      # 无效位置填 -1
+
+    - name: sparse_values
+      dtype: [bfloat16, float16]
+      # v3 修正: dtype 为 bfloat16/float16 (与 query/key 一致), 非 int32
+      # shape: same as sparse_indices, optional (return_value=True)
+      # 仅 layout_key != PA_BSND 时支持
+
+  schema: |
+    lightning_indexer(
+        query: Tensor, key: Tensor, weights: Tensor,
+        actual_seq_lengths_query: Optional[Tensor[int32]] = None,
+        actual_seq_lengths_key: Optional[Tensor[int32]] = None,
+        block_table: Optional[Tensor[int32]] = None,
+        layout_query: str = "BSND",
+        layout_key: str = "BSND",
+        sparse_count: int = 2048,
+        sparse_mode: int = 3,
+        pre_tokens: int = 2^63-1,
+        next_tokens: int = 2^63-1,
+        return_value: bool = False
+    ) -> (Tensor[int32], Optional[Tensor[bfloat16/float16]])

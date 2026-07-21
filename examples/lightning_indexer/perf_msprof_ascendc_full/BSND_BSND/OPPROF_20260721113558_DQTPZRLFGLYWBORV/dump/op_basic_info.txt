@@ -1,0 +1,10 @@
+Op Name=LightningIndexer_468c104183baa47aac33ce774c8668e0_196865_mix_aic
+Block Dim=20
+Run Soc Version=Ascend910B3
+Device Id=0
+Pid=557453
+Current Freq=1800
+Rated Freq=1800
+Is MC2=0
+Is Lccl=0
+Has Simt=0

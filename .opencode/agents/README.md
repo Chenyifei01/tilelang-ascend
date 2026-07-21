@@ -1,4 +1,5 @@
 ---
+# disable: 防止 OpenCode 将本 README 当作 agent 加载（agents 目录下非 .md agent 文件需此标记）
 disable: true
 ---
 

@@ -1,0 +1,138 @@
+{
+  "benchmark_date": "2026-07-20",
+  "tool": "msprof op --kernel-name=Lightning --aic-metrics=Default",
+  "device": "Ascend A2 (24 cores, AIC:AIV=1:2)",
+  "cases": {
+    "BSND_BSND": {
+      "testcase": "LI_L0_16_64_1_5_3072_128_BSND_BSND_FP16_000002",
+      "params": {"B": 16, "S1": 5, "S2": 3072, "N1": 64, "N2": 1, "D": 128, "block_size": 128, "dtype": "FP16", "layout_q": "BSND", "layout_k": "BSND", "sparse_count": 2048, "sparse_mode": 3},
+      "task_duration_us": 73.2,
+      "block_dim": 20,
+      "mix_block_dim": 40,
+      "pipe_utilization": {
+        "aic_cube_ratio": 0.21,
+        "aic_mte1_ratio": 0.19,
+        "aic_mte2_ratio": 0.15,
+        "aic_mte3_ratio": 0.04,
+        "aic_fixpipe_ratio": 0.30,
+        "aiv_vec_ratio_vec0": 0.65,
+        "aiv_vec_ratio_vec1": 0.47,
+        "aiv_mte2_ratio_vec0": 0.27,
+        "aiv_mte3_ratio_vec0": 0.03
+      },
+      "arithmetic_utilization": {
+        "aic_cube_fops": 491520,
+        "aiv_vec_fops_vec0": 1191840,
+        "aiv_vec_fops_vec1": 800576
+      },
+      "memory_ub_bw": {
+        "aiv_ub_read_bw_vec0_GBs": 109.4,
+        "aiv_ub_write_bw_vec0_GBs": 85.8,
+        "aiv_ub_read_bw_vec1_GBs": 73.0,
+        "aiv_ub_write_bw_vec1_GBs": 57.8
+      },
+      "analysis": "Cube 利用率仅 21%, Vector 利用率 65%/47%。GEMM 不是瓶颈, weight mul + reduce + topk 是瓶颈。UB 读写带宽较高 (109/86 GB/s)。"
+    },
+    "BSND_PA_BSND": {
+      "testcase": "LI_L0_pa_2_8_1_1_2048_128_BSND_PA_BSND_FP16_000008",
+      "params": {"B": 2, "S1": 1, "S2": 2048, "N1": 8, "N2": 1, "D": 128, "block_size": 128, "dtype": "FP16", "layout_q": "BSND", "layout_k": "PA_BSND", "sparse_count": 2048, "sparse_mode": 3},
+      "task_duration_us": 21.8,
+      "block_dim": 20,
+      "mix_block_dim": 40,
+      "pipe_utilization": {
+        "aic_cube_ratio": 0.011,
+        "aic_mte1_ratio": 0.031,
+        "aic_mte2_ratio": 0.094,
+        "aic_mte3_ratio": 0.058,
+        "aic_fixpipe_ratio": 0.115,
+        "aiv_vec_ratio_vec0": 0.19,
+        "aiv_vec_ratio_vec1": 0.10,
+        "aiv_mte2_ratio_vec0": 0.138,
+        "aiv_mte3_ratio_vec0": 0.025
+      },
+      "arithmetic_utilization": {
+        "aic_cube_fops": 32768,
+        "aiv_vec_fops_vec0": 41792,
+        "aiv_vec_fops_vec1": 18048
+      },
+      "memory_ub_bw": {
+        "aiv_ub_read_bw_vec0_GBs": 10.0,
+        "aiv_ub_write_bw_vec0_GBs": 17.4,
+        "aiv_ub_read_bw_vec1_GBs": 0.15,
+        "aiv_ub_write_bw_vec1_GBs": 5.6
+      },
+      "analysis": "Cube 利用率极低 1.1%, 数据量太小 (B=2,S1=1,N1=8)。Vector 利用率也低 19%/10%。整体是 launch overhead 主导。"
+    },
+    "TND_TND": {
+      "testcase": "LI_L0_8_24_1_5_3072_128_TND_FP16_000032",
+      "params": {"B": 8, "S1": 5, "S2": 3072, "N1": 24, "N2": 1, "D": 128, "block_size": 256, "dtype": "FP16", "layout_q": "TND", "layout_k": "TND", "sparse_count": 2048, "sparse_mode": 0},
+      "task_duration_us": 40.3,
+      "block_dim": 20,
+      "mix_block_dim": 40,
+      "pipe_utilization": {
+        "aic_cube_ratio": 0.089,
+        "aic_mte1_ratio": 0.071,
+        "aic_mte2_ratio": 0.168,
+        "aic_mte3_ratio": 0.019,
+        "aic_fixpipe_ratio": 0.219,
+        "aiv_vec_ratio_vec0": 0.575,
+        "aiv_vec_ratio_vec1": 0.402,
+        "aiv_mte2_ratio_vec0": 0.178,
+        "aiv_mte3_ratio_vec0": 0.038
+      },
+      "arithmetic_utilization": {
+        "aic_cube_fops": 98304,
+        "aiv_vec_fops_vec0": 335808,
+        "aiv_vec_fops_vec1": 229888
+      },
+      "memory_ub_bw": {
+        "aiv_ub_read_bw_vec0_GBs": 63.8,
+        "aiv_ub_write_bw_vec0_GBs": 67.4,
+        "aiv_ub_read_bw_vec1_GBs": 42.6,
+        "aiv_ub_write_bw_vec1_GBs": 46.0
+      },
+      "analysis": "Cube 利用率 8.9%, Vector 利用率 57.5%/40.2%。MTE2 (GM→UB 搬运) 占 16.8%, 是主要瓶颈之一。UB 带宽 64/67 GB/s 中等。"
+    },
+    "TND_PA_BSND": {
+      "testcase": "LI_L0_pa_20_64_1_3_512_128_TND_PA_BSND_BF16_000021",
+      "params": {"B": 20, "S1": 3, "S2": 512, "N1": 64, "N2": 1, "D": 128, "block_size": 16, "dtype": "BF16", "layout_q": "TND", "layout_k": "PA_BSND", "sparse_count": 315, "sparse_mode": 0},
+      "task_duration_us": 42.3,
+      "block_dim": 20,
+      "mix_block_dim": 40,
+      "pipe_utilization": "详细数据因 BF16 kernel 名差异未完整采集",
+      "analysis": "B=20, S2=512, block_size=16, sparse_count=315 (非标值)。BF16 dtype。详细指标未完整采集, 但 Task Duration ~42us。"
+    }
+  },
+  "summary": {
+    "ascendc_baseline_us": {
+      "BSND_BSND": 73.2,
+      "BSND_PA_BSND": 21.8,
+      "TND_TND": 40.3,
+      "TND_PA_BSND": 42.3
+    },
+    "target_80pct_us": {
+      "BSND_BSND": 91.5,
+      "BSND_PA_BSND": 27.3,
+      "TND_TND": 50.4,
+      "TND_PA_BSND": 52.9
+    },
+    "key_findings": [
+      "1. Cube 利用率普遍很低 (1.1%~21%), GEMM 不是瓶颈",
+      "2. Vector 利用率中等 (10%~65%), weight mul + reduce + topk 是主要计算",
+      "3. 所有场景 Block Dim=20, Mix Block Dim=40 (AIC:AIV=1:2)",
+      "4. MTE2 (GM→UB 搬运) 在 TND_TND 场景占 16.8%, 是次要瓶颈",
+      "5. UB 带宽: BSND_BSND 最高 109 GB/s, BSND_PA_BSND 最低 10 GB/s",
+      "6. FixPipe (L0C→GM) 利用率 11.5%~30%, 与 ReLU 融合的 copy 相关",
+      "7. 小数据量场景 (BSND_PA_BSND) launch overhead 主导, 性能优化空间小",
+      "8. 大数据量场景 (BSND_BSND) Vector 是瓶颈, 需优化 weight mul + reduce + topk"
+    ],
+    "optimization_priorities": [
+      "P0: Vector 侧 weight mul + reduce 优化 (影响所有场景的 Vector 利用率)",
+      "P0: TopK 排序优化 (AscendC 用 Sort32+MrgSort4, 需评估 T.tile.topk 性能)",
+      "P1: MTE2 带宽优化 (减少 GM→UB 搬运, 影响 TND_TND 场景)",
+      "P1: UB bank 冲突优化 (影响 reduce 性能)",
+      "P2: Cube 流水线优化 (Cube 利用率低, 但不是主瓶颈)",
+      "P2: 小数据量场景的 launch overhead 优化 (BSND_PA_BSND)"
+    ]
+  }
+}

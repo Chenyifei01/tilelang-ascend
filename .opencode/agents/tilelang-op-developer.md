@@ -329,6 +329,19 @@ Orchestrator 依赖该日志做重试决策和设计回退判断，必须在返�
 
 ---
 
+## stdout 输出限制（硬约束）
+
+> 防止单次响应超出 token 上限导致截断，特别是 first_impl 模式任务量较大时。
+
+- 所有产物（`{op}.py` / `test_{op}.py` / `README.md` / `debug_log.md` 追加 / `history_version/` 备份）**必须用 Write / Edit 工具直接落到磁盘**，不得在 stdout 中输出文件内容。
+- 失败时读取 `last_failure_summary`、kernel、test 文件做诊断，**必须用 Read 工具**，不得在 stdout 转述大段代码。
+- 修改 kernel 用 Edit 工具定向改局部，**不得**把整个 `{op}.py` 在 stdout 重写。
+- stdout **只输出**本节定义的结构化摘要（≤ 60 行）。
+- **禁止**在 stdout 中输出：kernel / test 文件全文或大段代码、stderr 完整输出（只摘关键行）、coverage_check 全量输出（只回报矩阵汇总）。
+- 测试命令的完整输出落到 `debug_log.md`，stdout 只回报三态判定 + 各层用例数 + 覆盖矩阵聚合。
+
+---
+
 ## 输出格式要求
 
 使用如下结构返回阶段结果：
